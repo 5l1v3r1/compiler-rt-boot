@@ -1,5 +1,7 @@
 #!/bin/sh
 
+# From musl/configure
+
 usage () {
     cat <<EOF
 Usage: $0 [OPTION]... [VAR=VALUE]... [TARGET]
@@ -14,33 +16,19 @@ Configuration:
 
 Installation directories:
   --prefix=PREFIX         main installation prefix [/usr/local/musl]
-  --exec-prefix=EPREFIX   installation prefix for executable files [PREFIX]
 
 Fine tuning of the installation directories:
-  --bindir=DIR            user executables [EPREFIX/bin]
   --libdir=DIR            library files for the linker [PREFIX/lib]
-  --includedir=DIR        include files for the C compiler [PREFIX/include]
-  --syslibdir=DIR         location for the dynamic linker [/lib]
 
 System types:
   --target=TARGET         configure to run on target TARGET [detected]
   --host=HOST             same as --target
   --build=BUILD           build system type; used only to infer cross-compiling
 
-Optional features:
-  --enable-optimize=...   optimize listed components for speed over size [auto]
-  --enable-debug          build with debugging information [disabled]
-  --enable-warnings       build with recommended warnings flags [disabled]
-  --enable-visibility     use global visibility options to optimize PIC [no]
-  --enable-wrapper=...    build given musl toolchain wrapper [auto]
-  --disable-shared        inhibit building shared library [enabled]
-  --disable-static        inhibit building static library [enabled]
-
 Some influential environment variables:
   CC                      C compiler command [detected]
   CFLAGS                  C compiler flags [-Os -pipe ...]
   CROSS_COMPILE           prefix for cross compiler and tools [none]
-  LIBCC                   compiler runtime library [detected]
 
 Use these variables to override the choices made by configure.
 
@@ -115,64 +103,21 @@ tryldflag () {
 
 CFLAGS_C99FSE=
 CFLAGS_AUTO=
-CFLAGS_MEMOPS=
-CFLAGS_NOSSP=
 CFLAGS_TRY=
 LDFLAGS_AUTO=
 LDFLAGS_TRY=
-OPTIMIZE_GLOBS=
-srcdir=
-prefix=/usr/local/musl
+prefix=/dev/null
 exec_prefix='$(prefix)'
-bindir='$(exec_prefix)/bin'
 libdir='$(prefix)/lib'
-includedir='$(prefix)/include'
-syslibdir='/lib'
-tools=
-tool_libs=
 build=
 target=
-optimize=auto
-debug=no
-warnings=no
-visibility=no
-shared=auto
-static=yes
-wrapper=auto
-gcc_wrapper=no
-clang_wrapper=no
 
 for arg ; do
     case "$arg" in
         --help|-h) usage ;;
         --srcdir=*) srcdir=${arg#*=} ;;
         --prefix=*) prefix=${arg#*=} ;;
-        --exec-prefix=*) exec_prefix=${arg#*=} ;;
-        --bindir=*) bindir=${arg#*=} ;;
         --libdir=*) libdir=${arg#*=} ;;
-        --includedir=*) includedir=${arg#*=} ;;
-        --syslibdir=*) syslibdir=${arg#*=} ;;
-        --enable-shared|--enable-shared=yes) shared=yes ;;
-        --disable-shared|--enable-shared=no) shared=no ;;
-        --enable-static|--enable-static=yes) static=yes ;;
-        --disable-static|--enable-static=no) static=no ;;
-        --enable-optimize) optimize=yes ;;
-        --enable-optimize=*) optimize=${arg#*=} ;;
-        --disable-optimize) optimize=no ;;
-        --enable-debug|--enable-debug=yes) debug=yes ;;
-        --disable-debug|--enable-debug=no) debug=no ;;
-        --enable-warnings|--enable-warnings=yes) warnings=yes ;;
-        --disable-warnings|--enable-warnings=no) warnings=no ;;
-        --enable-visibility=auto) visibility=auto ;;
-        --enable-visibility|--enable-visibility=yes) visibility=yes ;;
-        --disable-visibility|--enable-visibility=no) visibility=no ;;
-        --enable-wrapper|--enable-wrapper=yes) wrapper=detect ;;
-        --enable-wrapper=all) wrapper=yes ; gcc_wrapper=yes ; clang_wrapper=yes ;;
-        --enable-wrapper=gcc) wrapper=yes ; gcc_wrapper=yes ;;
-        --enable-wrapper=clang) wrapper=yes ; clang_wrapper=yes ;;
-        --disable-wrapper|--enable-wrapper=no) wrapper=no ;;
-        --enable-gcc-wrapper|--enable-gcc-wrapper=yes) wrapper=yes ; gcc_wrapper=yes ;;
-        --disable-gcc-wrapper|--enable-gcc-wrapper=no) wrapper=no ;;
         --enable-*|--disable-*|--with-*|--without-*|--*dir=*) ;;
         --host=*|--target=*) target=${arg#*=} ;;
         --build=*) build=${arg#*=} ;;
@@ -182,27 +127,14 @@ for arg ; do
         CPPFLAGS=*) CPPFLAGS=${arg#*=} ;;
         LDFLAGS=*) LDFLAGS=${arg#*=} ;;
         CROSS_COMPILE=*) CROSS_COMPILE=${arg#*=} ;;
-        LIBCC=*) LIBCC=${arg#*=} ;;
         *=*) ;;
         *) build=$arg ; target=$arg ;;
     esac
 done
 
-for i in srcdir prefix exec_prefix bindir libdir includedir syslibdir ; do
+for i in prefix libdir; do
     stripdir $i
 done
-
-#
-# Get the source dir for out-of-tree builds
-#
-if test -z "$srcdir" ; then
-    srcdir="${0%/configure}"
-    stripdir srcdir
-fi
-abs_builddir="$(pwd)" || fail "$0: cannot determine working directory"
-abs_srcdir="$(cd $srcdir && pwd)" || fail "$0: invalid source directory $srcdir"
-test "$abs_srcdir" = "$abs_builddir" && srcdir=.
-test "$srcdir" != "." -a -f Makefile -a ! -h Makefile && fail "$0: Makefile already exists in the working directory"
 
 #
 # Get a temp filename we can use
@@ -267,39 +199,6 @@ elif fnmatch '*clang\ version*' "$cc_ver" ; then
     cc_family=clang
 fi
 echo "$cc_family"
-
-#
-# Figure out toolchain wrapper to build
-#
-if test "$wrapper" = auto -o "$wrapper" = detect ; then
-    echo "#include <stdlib.h>" > "$tmpc"
-    echo "#if ! __GLIBC__" >> "$tmpc"
-    echo "#error no" >> "$tmpc"
-    echo "#endif" >> "$tmpc"
-    printf "checking for toolchain wrapper to build... "
-    if test "$wrapper" = auto && ! $CC -c -o /dev/null "$tmpc" >/dev/null 2>&1 ; then
-        echo "none"
-    elif test "$cc_family" = gcc ; then
-        gcc_wrapper=yes
-        echo "gcc"
-    elif test "$cc_family" = clang ; then
-        clang_wrapper=yes
-        echo "clang"
-    else
-        echo "none"
-        if test "$wrapper" = detect ; then
-            fail "$0: could not find an appropriate toolchain wrapper"
-        fi
-    fi
-fi
-
-if test "$gcc_wrapper" = yes ; then
-    tools="$tools obj/musl-gcc"
-    tool_libs="$tool_libs lib/musl-gcc.specs"
-fi
-if test "$clang_wrapper" = yes ; then
-    tools="$tools obj/musl-clang obj/ld.musl-clang"
-fi
 
 #
 # Find the target architecture
@@ -387,80 +286,8 @@ tryflag CFLAGS_NOSSP -fno-stack-protector
 #
 tryflag CFLAGS_MEMOPS -fno-tree-loop-distribute-patterns
 
-#
-# Enable debugging if requessted.
-#
-test "$debug" = yes && CFLAGS_AUTO=-g
-
-#
-# Preprocess asm files to add extra debugging information if debug is
-# enabled, our assembler supports the needed directives, and the
-# preprocessing script has been written for our architecture.
-#
-printf "checking whether we should preprocess assembly to add debugging information... "
-if fnmatch '-g*|*\ -g*' "$CFLAGS_AUTO $CFLAGS" &&
-    test -f "tools/add-cfi.$ARCH.awk" &&
-    printf ".file 1 \"srcfile.s\"\n.line 1\n.cfi_startproc\n.cfi_endproc" | $CC -g -x assembler -c -o /dev/null 2>/dev/null -
-then
-    ADD_CFI=yes
-else
-    ADD_CFI=no
-fi
-printf "%s\n" "$ADD_CFI"
-
-#
-# Possibly add a -O option to CFLAGS and select modules to optimize with
-# -O3 based on the status of --enable-optimize and provided CFLAGS.
-#
-printf "checking for optimization settings... "
-case "x$optimize" in
-    xauto)
-        if fnmatch '-O*|*\ -O*' "$CFLAGS_AUTO $CFLAGS" ; then
-            printf "using provided CFLAGS\n" ;optimize=no
-        else
-            printf "using defaults\n" ; optimize=yes
-        fi
-        ;;
-    xsize|xnone) printf "minimize size\n" ; optimize=size ;;
-    xno|x) printf "disabled\n" ; optimize=no ;;
-    *) printf "custom\n" ;;
-esac
-
-test "$optimize" = no || tryflag CFLAGS_AUTO -Os || tryflag CFLAGS_AUTO -O2
-test "$optimize" = yes && optimize="internal,malloc,string"
-
-if fnmatch 'no|size' "$optimize" ; then :
-else
-    printf "components to be optimized for speed:"
-    while test "$optimize" ; do
-        case "$optimize" in
-            *,*) this=${optimize%%,*} optimize=${optimize#*,} ;;
-            *) this=$optimize optimize=
-        esac
-        printf " $this"
-        case "$this" in
-            */*.c) ;;
-            */*) this=$this*.c ;;
-            *) this=$this/*.c ;;
-        esac
-        OPTIMIZE_GLOBS="$OPTIMIZE_GLOBS $this"
-    done
-    OPTIMIZE_GLOBS=${OPTIMIZE_GLOBS# }
-    printf "\n"
-fi
-
 # Always try -pipe
 tryflag CFLAGS_AUTO -pipe
-
-#
-# If debugging is disabled, omit frame pointer. Modern GCC does this
-# anyway on most archs even when debugging is enabled since the frame
-# pointer is no longer needed for debugging.
-#
-if fnmatch '-g*|*\ -g*' "$CFLAGS_AUTO $CFLAGS" ; then :
-else 
-    tryflag CFLAGS_AUTO -fomit-frame-pointer
-fi
 
 #
 # Modern GCC wants to put DWARF tables (used for debugging and
@@ -513,50 +340,6 @@ tryflag CFLAGS_AUTO -Werror=pointer-arith
 #
 tryflag CFLAGS_AUTO -Qunused-arguments
 
-if test "x$warnings" = xyes ; then
-    tryflag CFLAGS_AUTO -Wall
-    tryflag CFLAGS_AUTO -Wno-parentheses
-    tryflag CFLAGS_AUTO -Wno-uninitialized
-    tryflag CFLAGS_AUTO -Wno-missing-braces
-    tryflag CFLAGS_AUTO -Wno-unused-value
-    tryflag CFLAGS_AUTO -Wno-unused-but-set-variable
-    tryflag CFLAGS_AUTO -Wno-unknown-pragmas
-    tryflag CFLAGS_AUTO -Wno-pointer-to-int-cast
-fi
-
-if test "x$visibility" = xauto ; then
-    # This test checks toolchain support for several things:
-    # - the -include option
-    # - the attributes/pragmas used in vis.h
-    # - linking code that takes the address of protected symbols
-    # - gcc 3.x bug that wrongly claims declarations mismatch
-    printf "checking whether global visibility preinclude works... "
-    cat > "$tmpc" <<EOF
-__attribute__((__visibility__("default")))
-extern struct a *const x;
-typedef struct a b;
-extern b *const x;
-b *const x;
-int (*fp)(void);
-int foo(void) { }
-int bar(void) { fp = foo; return foo(); }
-EOF
-    if $CC $CFLAGS_C99FSE $CPPFLAGS $CFLAGS \
-        -DSHARED -fPIC -I$srcdir/src/internal -include vis.h \
-        -nostdlib -shared -Wl,-Bsymbolic-functions \
-        -o /dev/null "$tmpc" >/dev/null 2>&1 ; then
-    visibility=yes
-    else
-        visibility=no
-    fi
-    printf "%s\n" "$visibility"
-fi
-
-if test "x$visibility" = xyes ; then
-    CFLAGS_AUTO="$CFLAGS_AUTO -include vis.h"
-    CFLAGS_AUTO="${CFLAGS_AUTO# }"
-fi
-
 # Determine if the compiler produces position-independent code (PIC)
 # by default. If so, we don't need to compile separate object files
 # for libc.a and libc.so.
@@ -596,15 +379,6 @@ tryldflag LDFLAGS_AUTO -Wl,--exclude-libs=ALL
 # --dynamic-list rather than -Bsymbolic-functions for greater
 # control over what symbols are left unbound.
 tryldflag LDFLAGS_AUTO -Wl,--dynamic-list="$srcdir/dynamic.list"
-
-# Find compiler runtime library
-test -z "$LIBCC" && tryldflag LIBCC -lgcc && tryldflag LIBCC -lgcc_eh
-test -z "$LIBCC" && tryldflag LIBCC -lcompiler_rt
-test -z "$LIBCC" && try_libcc=`$CC -print-libgcc-file-name 2>/dev/null` \
-    && tryldflag LIBCC "$try_libcc"
-test -z "$LIBCC" && try_libcc=`$CC -print-file-name=libpcc.a 2>/dev/null` \
-    && tryldflag LIBCC "$try_libcc"
-printf "using compiler runtime libraries: %s\n" "$LIBCC"
 
 # Figure out arch variants for archs with variants
 SUBARCH=
@@ -731,28 +505,20 @@ if trycppif "__FAST_MATH__" \
     fail "$0: error: compiler has broken floating point; check CFLAGS"
 fi
 
-printf "creating config.mak... "
+printf "creating config.mk... "
 
 cmdline=$(quote "$0")
 for i ; do cmdline="$cmdline $(quote "$i")" ; done
 
-exec 3>&1 1>config.mak
-
-
-cat << EOF
+cat > config.mk << EOF
 # This version of config.mak was generated by:
 # $cmdline
 # Any changes made here will be lost if configure is re-run
 ARCH = $ARCH
 SUBARCH = $SUBARCH
 ASMSUBARCH = $ASMSUBARCH
-srcdir = $srcdir
 prefix = $prefix
-exec_prefix = $exec_prefix
-bindir = $bindir
 libdir = $libdir
-includedir = $includedir
-syslibdir = $syslibdir
 CC = $CC
 CFLAGS = $CFLAGS
 CFLAGS_AUTO = $CFLAGS_AUTO
@@ -763,19 +529,6 @@ CPPFLAGS = $CPPFLAGS
 LDFLAGS = $LDFLAGS
 LDFLAGS_AUTO = $LDFLAGS_AUTO
 CROSS_COMPILE = $CROSS_COMPILE
-LIBCC = $LIBCC
-OPTIMIZE_GLOBS = $OPTIMIZE_GLOBS
-ALL_TOOLS = $tools
-TOOL_LIBS = $tool_libs
-ADD_CFI = $ADD_CFI
 EOF
-test "x$static" = xno && echo "STATIC_LIBS ="
-test "x$shared" = xno && echo "SHARED_LIBS ="
-test "x$cc_family" = xgcc && echo 'WRAPCC_GCC = $(CC)'
-test "x$cc_family" = xclang && echo 'WRAPCC_CLANG = $(CC)'
-test "x$pic_default" = xyes && echo 'AOBJS = $(LOBJS)'
-exec 1>&3 3>&-
-
-test "$srcdir" = "." || ln -sf $srcdir/Makefile .
 
 printf "done\n"
